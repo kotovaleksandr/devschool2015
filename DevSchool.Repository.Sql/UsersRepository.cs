@@ -53,5 +53,10 @@ namespace DevSchool.Repository.Sql
 				}
 			}
 		}
+
+		public bool Contains(Guid id)
+		{
+			throw new NotImplementedException();
+		}
 	}
 }

@@ -14,5 +14,6 @@ namespace DevSchool.Model.Repository
 		/// <param name="user"></param>
 		void Create(User user);
 		User Get(Guid id);
+		bool Contains(Guid id);
 	}
 }
