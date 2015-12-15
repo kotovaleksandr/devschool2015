@@ -1,0 +1,197 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="3.5" DefaultTargets="BuildAll" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+	<Import Project="$(MSBuildExtensionsPath)\ExtensionPack\4.0\MSBuild.ExtensionPack.tasks"/>
+	<PropertyGroup>
+		<BuildNumber>0</BuildNumber>
+		<CorrectBuildNumber>$(BuildNumber)</CorrectBuildNumber>
+		<MaxValue>$([System.UInt16]::MaxValue)</MaxValue>
+		<CorrectBuildNumber Condition=" $(CorrectBuildNumber) >= $(MaxValue) ">$([MSBuild]::Subtract($(BuildNumber), $(MaxValue)))</CorrectBuildNumber>
+		<CardLibVersion>2002</CardLibVersion>
+		<Version>4.5.$(CardLibVersion).$(CorrectBuildNumber)</Version>
+		<CertificatePath>&quot;..\Bin\Cab&amp;Sign\Docsvision.pfx&quot;</CertificatePath>
+		<ClientProductCode>$([System.Guid]::NewGuid().ToString("B").ToUpper())</ClientProductCode>
+	</PropertyGroup>
+
+	<Target Name="BuildAll">
+		<CallTarget Targets="SetVerions"/>
+		<CallTarget Targets="BuildCardLib"/>
+		<CallTarget Targets="BuildOfficeHelper"/>
+		<CallTarget Targets="BuildManaged"/>
+		<CallTarget Targets="BuildTakeOffice"/>
+		<CallTarget Targets="PrepareInstallSource"/>
+		<CallTarget Targets="CopyBinariesToInstallRoot"/>
+		<CallTarget Targets="CopyDatabase"/>
+		<CallTarget Targets="BuildClientInstallShield"/>
+		<CallTarget Targets="BuildServerInstallShield"/>
+		<CallTarget Targets="PublishMsi"/>
+		<CallTarget Targets="CopyVBSymbolsToBinaries"/>
+	</Target>
+
+	<Target Name="BuildCardLib">
+		<MSBuild Projects="CardLib\CardLib.sln" Properties="Configuration=Release;GenerateDocumentation=true;Optimize=true;PreBuildEvent=;PostBuildEvent=;PostBuildEventUseInBuild=false"/>
+	</Target>
+
+	<Target Name="BuildTakeOffice">
+		<Exec Command="nmake"/>
+		<ItemGroup>
+			<TakeOfficeBinaries Include="**\*.ocx"/>
+			<TakeOfficeBinaries Include="**\*.dll"/>
+		</ItemGroup>
+		<Exec Command="FixVersionInfo.exe %(TakeOfficeBinaries.Identity) /ver $(Version)"/>
+	</Target>
+
+	<Target Name="BuildOfficeHelper">
+		<MSBuild Projects="Tools\AddIns\OfficeHelper\OfficeHelper.sln " Properties="Configuration=Release;GenerateDocumentation=true;Optimize=true;"/>
+	</Target>
+
+	<Target Name="BuildManaged">
+		<ItemGroup>
+			<ManagedProjects Include="..\TakeOffice.Managed\TakeOffice.sln"/>
+		</ItemGroup>
+		<MSBuild Projects="@(ManagedProjects)" Properties="Configuration=Release;GenerateDocumentation=true;Optimize=true;PreBuildEvent=;PostBuildEvent=" />
+	</Target>
+
+	<Target Name="CopyBinariesToInstallRoot">
+		<ItemGroup>
+			<Tools Include="Tools\**\*.exe" />
+			<Tools Include="Tools\**\*.ocx" />
+			<Tools Include="Tools\**\*.dll" />
+			<Templates Include="Tools\**\*.xls"/>
+			<Client Include="$(OutDir)\TOCardLib.dll"/>
+			<Client Include="Cards\**\*.dll"/>
+			<Client Include="Cards\**\*.ocx"/>
+			<Client Include="Components\**\*.dll"/>
+			<Client Include="Components\**\*.ocx"/>
+			<ClientSettings Include="$(OutDir)\DocsVision.TakeOffice.Settings.dll"/>
+			<ClientSettingsRu Include="$(OutDir)\ru\DocsVision.TakeOffice.Settings.resources.dll"/>
+			<Forms Include="Offline\Forms\TOTask45.oft"/>
+			<Server Include="$(OutDir)\*TakeOffice*.dll"/>
+			<Server Include="$(OutDir)\*.exe"/>
+			<ServerRu Include="$(OutDir)\ru\*.dll"/>
+		</ItemGroup>
+
+		<Exec Command="signtool.exe sign /p /f $(CertificatePath)  %(Tools.Identity)" ContinueOnError="true"/>
+		<Copy DestinationFolder="C:\InstallRoot\TakeOffice\Tools" SourceFiles="@(Tools)"/>
+		<Copy DestinationFolder="C:\InstallRoot\TakeOffice\Tools\Templates" SourceFiles="@(Templates)"/>
+		<Copy DestinationFolder="C:\InstallRoot\TakeOffice\Forms" SourceFiles="@(Forms)"/>
+		<Exec Command="signtool.exe sign /p /f $(CertificatePath)  %(Client.Identity)"  ContinueOnError="true"/>
+		<Copy DestinationFolder="C:\InstallRoot\TakeOffice\Client" SourceFiles="@(Client)"/>
+		<Exec Command="signtool.exe sign /p /f $(CertificatePath)  %(ClientSettings.Identity)" ContinueOnError="true"/>
+		<Copy DestinationFolder="C:\InstallRoot\TakeOffice\Client" SourceFiles="@(ClientSettings)"/>
+		<Copy DestinationFolder="C:\InstallRoot\TakeOffice\Client\ru" SourceFiles="@(ClientSettingsRu)"/>
+		<Exec Command="signtool.exe sign /p /f $(CertificatePath)  %(Server.Identity)"/>
+		<Copy DestinationFolder="C:\InstallRoot\TakeOffice\Server" SourceFiles="@(Server)"/>
+		<Exec Command="signtool.exe sign /p /f $(CertificatePath)  %(ServerRu.Identity)"/>
+		<Copy DestinationFolder="C:\InstallRoot\TakeOffice\Server\ru" SourceFiles="@(ServerRu)"/>
+	</Target>
+
+	<Target Name="BuildClientInstallShield">
+		<Exec Command="&quot;c:\Program Files\InstallShield\2010\System\IsCmdBld.exe&quot; -p Install\TakeOfficeClient.ism -r Release -a Production -z  &quot;ProductCode=$(ClientProductCode)&quot; -y  &quot;$(Version)&quot;"/>
+		<ItemGroup>
+			<ClientMsi Include="Install\**\*Client.msi"></ClientMsi>
+		</ItemGroup>
+		<Exec Command="signtool.exe sign /p /f $(CertificatePath)  %(ClientMsi.Identity)"/>
+		<Copy SourceFiles="@(ClientMsi)" DestinationFiles="c:\InstallRoot\TakeOffice\Install\TakeOfficeClient$(CardLibVersion).msi"/>
+	</Target>
+
+	<Target Name="PrepareInstallSource">
+		<ItemGroup>
+			<InstallSourceFiles Include="..\InstallSource\**\*.*"></InstallSourceFiles>
+		</ItemGroup>
+		<Copy SourceFiles="@(InstallSourceFiles)" DestinationFolder="c:\InstallRoot\InstallSource\%(RecursiveDir)"></Copy>
+	</Target>
+
+	<Target Name="AssemblyInfoSet">
+		<ItemGroup>
+			<AssemblyInfoFiles Include="..\TakeOffice.Managed\**\AssemblyInfo.cs" />
+		</ItemGroup>
+		<Exec Command="attrib -r %(AssemblyInfoFiles.Identity)"/>
+		<Message Text="$(Version)"/>
+		<MSBuild.ExtensionPack.Framework.AssemblyInfo AssemblyInfoFiles="@(AssemblyInfoFiles)" AssemblyVersion="$(Version)" AssemblyFileVersion="$(Version)"/>
+	</Target>
+
+	<Target Name="BuildInfoSet">
+		<ItemGroup>
+			<BuildInfoFiles Include="..\TakeOffice.Managed\**\BuildInfo.cs"/>
+		</ItemGroup>
+		<Exec Command="attrib -r %(BuildInfoFiles.Identity)"/>
+		<MSBuild.ExtensionPack.FileSystem.File TaskAction="Replace" Files="@(BuildInfoFiles)" RegexPattern="public const string FileVersion = &quot;[0-9\.]+&quot;" Replacement="public const string FileVersion = &quot;$(Version)&quot;" />
+	</Target>
+
+	<Target Name="SetDvverVersion">
+		<ItemGroup>
+			<DvVer Include="..\Include\dvver.h"></DvVer>
+		</ItemGroup>
+		<Exec Command="attrib -r %(DvVer.Identity)"/>
+		<Message Text="$(CardLibVersion)"/>
+		<MSBuild.ExtensionPack.FileSystem.File TaskAction="Replace" Files="@(DvVer)" RegexPattern="VERSION_REVISION\s+\d+" Replacement="VERSION_REVISION $(CorrectBuildNumber)" />
+		<MSBuild.ExtensionPack.FileSystem.File TaskAction="Replace" Files="@(DvVer)" RegexPattern="VERSION_BUILD\s+\d+" Replacement="VERSION_BUILD $(CardLibVersion)" />
+	</Target>
+
+	<Target Name="SetVerions">
+		<!--<CallTarget Targets="AssemblyInfoSet"/>-->
+		<CallTarget Targets="BuildInfoSet"/>
+		<CallTarget Targets="SetDvverVersion"/>
+		<CallTarget Targets="SetCardLibVersion"/>
+		<CallTarget Targets="SetSnapIn"/>
+	</Target>
+
+	<Target Name="CopyDatabase">
+		<ItemGroup>
+			<DatabaseItems Include="CardDefs\**\*.*"/>
+			<AdditionalScripts Include="Install\SQL\*.*"></AdditionalScripts>
+		</ItemGroup>
+		<Copy SourceFiles="@(DatabaseItems)" DestinationFolder="c:\InstallRoot\TakeOffice\Database\TakeOffice\%(RecursiveDir)"/>
+		<Copy SourceFiles="Install\Install.xml" DestinationFiles="c:\InstallRoot\TakeOffice\Database\TakeOfficeInstall.xml"/>
+		<Copy SourceFiles="@(AdditionalScripts)" DestinationFolder="c:\InstallRoot\TakeOffice\Database\TakeOffice\SQL\%(RecursiveDir)"/>
+	</Target>
+
+	<Target Name="SetCardLibVersion">
+		<ItemGroup>
+			<CardDefsFullName Include="CardDefs\TakeOfficeCardLib.xml"/>
+		</ItemGroup>
+		<Exec Command="attrib -r @(CardDefsFullName)"/>
+		<MSBuild.ExtensionPack.Xml.XmlFile TaskAction="UpdateAttribute" File="@(CardDefsFullName)" XPath="/CardLibrary" Key="Version" Value="$(CardLibVersion)"/>
+		<MSBuild.ExtensionPack.Xml.XmlFile TaskAction="UpdateAttribute" File="@(CardDefsFullName)" XPath="/CardLibrary/Installers/Installer" Key="Version" Value="$(CardLibVersion)"/>
+		<MSBuild.ExtensionPack.Xml.XmlFile TaskAction="UpdateAttribute" File="@(CardDefsFullName)" XPath="/CardLibrary/Installers/Installer" Key="MsiPackageName" Value="TakeOfficeClient/TakeOfficeClient$(CardLibVersion).msi"/>
+	</Target>
+
+	<Target Name="SetSnapIn">
+		<ItemGroup>
+			<SnapIn Include="..\TakeOffice.Managed\TakeOffice.SnapIn\Constants.cs" />
+		</ItemGroup>
+		<MSBuild.ExtensionPack.FileSystem.File TaskAction="Replace" Files="@(SnapIn)" RegexPattern="(?&lt;=\&quot;)(.*.msi)" Replacement="TakeOfficeClient$(CardLibVersion).msi" />
+		<MSBuild.ExtensionPack.FileSystem.File TaskAction="Replace" Files="@(SnapIn)" RegexPattern="(?&lt;=ProductCode.*\&quot;)(.*\})" Replacement="$(ClientProductCode)"/>
+	</Target>
+
+	<Target Name="BuildServerInstallShield">
+		<PropertyGroup>
+			<ServerProductCode>$([System.Guid]::NewGuid().ToString("B").ToUpper())</ServerProductCode>
+		</PropertyGroup>
+		<Exec Command="&quot;c:\Program Files\InstallShield\2010\System\IsCmdBld.exe&quot; -p Install\TakeOffice.ism -r Release -a Production -z  &quot;ProductCode=$(ServerProductCode)&quot; -y  &quot;$(Version)&quot;"/>
+		<ItemGroup>
+			<ServerMsi Include="Install\**\*TakeOffice.msi"></ServerMsi>
+		</ItemGroup>
+		<Exec Command="signtool.exe sign /p  /f $(CertificatePath)  %(ClientMsi.Identity)"/>
+	</Target>
+
+	<Target Name="PublishMsi">
+		<ItemGroup>
+			<Msi Include="Install\**\*TakeOffice.msi"></Msi>
+			<Msi Include="c:\InstallRoot\TakeOffice\Install\TakeOfficeClient$(CardLibVersion).msi"></Msi>
+		</ItemGroup>
+		<PropertyGroup>
+			<StringDate>$([System.DateTime]::Now.ToString('yyyy-MM-dd-HH.mm'))</StringDate>
+		</PropertyGroup>
+		<Copy SourceFiles="@(Msi)" DestinationFolder="\\digdes.com\dfs\Topics\PMO\Projects\DDSBRF_Dms_2009\Install\DocsVision\$(CardLibVersion)\TakeOffice\$(StringDate)_$(Version)"/>
+	</Target>
+
+	<Target Name="CopyVBSymbolsToBinaries">
+		<ItemGroup>
+			<!--<Symbols Include="Tools\**\*.pdb" />-->
+			<Symbols Include="Cards\**\*.pdb"/>
+			<!--<Symbols Include="Components\**\*.pdb"/>-->
+		</ItemGroup>
+		<Copy SourceFiles="@(Symbols)" DestinationFolder="$(OutDir)"/>
+	</Target>
+</Project>
